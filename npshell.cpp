@@ -4,6 +4,8 @@
 #include<unistd.h>
 #include<map>
 #include<vector>
+#include<queue>
+#include<sys/wait.h>
 using namespace std;
 
 /*
@@ -33,27 +35,32 @@ operationType
 1 : write >
 2 : pipe |
 3 : pipenumber |1
-4 : exclamation ?
-5 : exclamationnumber ?1
+4 : exclamationnumber ?1
 */
 
 struct command
 {
-    command() : state(0), numberpipeleft(0), currentTokenType(0),
-                commandType(0), operationType(0), currentTokenaFileName("") {}
+    command() : state(0), numberpipeleft(0), currentToken(""),
+                commandType(0), operationType(0) {}
     int commandType;
     int operationType;
-    int currentTokenType;
-    string currentTokenaFileName;
+    string currentToken;
+    vector<string> tokenArgument;
     int state;
     int numberpipeleft;
     vector<string> tokens;
 };
 
+queue<command> cmdqueue;
 map<string, string> envs;
 
 bool isBuildinCmd(command currentcmd){
     return currentcmd.tokens[0] == "setenv" || currentcmd.tokens[0] == "printenv" || currentcmd.tokens[0] == "exit";
+}
+
+bool isNumberPipe(string token){
+    if(token.size()<2) return false;
+    return (token[0]=='|'||token[0]=='!')&&isdigit(token[1]);
 }
 
 void writetofile(){
@@ -69,6 +76,7 @@ void pipe(){
 }
 
 void processexec(int type){
+    
     switch (type)
     {
     case 1:
@@ -89,24 +97,34 @@ void processexec(int type){
     }
 }
 
-void processToken(command &cmd){
-    int i = 0, pipeCommend = 0;
-    for(int i=0;i<cmd.tokens.size();++i) {
-        if(cmd.tokens[i] == "cat") {
-            processexec(1);
-        } else if(cmd.tokens[i] == "ls") {
-            processexec(2);
-        } else if(cmd.tokens[i] == "noop") {
-            processexec(3);
-        } else if(cmd.tokens[i] == "number") {
-            processexec(4);
-        } else if(cmd.tokens[i] == "removetag") {
-            processexec(5);
-        } else if(cmd.tokens[i] == "removetag0") {
-            processexec(6);
-        } else {
+void forkandexec(command &cmd){
 
+    int pid = fork();
+    if(pid == 0) { // chld process
+        int a = 0;
+        if(cmd.tokenArgument.data() == 0){
+            a = execlp(cmd.currentToken.c_str(), cmd.currentToken.c_str(), 
+                NULL, NULL);
+        } else {
+            a = execlp(cmd.currentToken.c_str(), cmd.currentToken.c_str(), 
+               cmd.tokenArgument.data()->c_str(), NULL);  
         }
+        if(a==-1) cout << "error exec" << endl;
+        cout << " from child process" << pid  << endl;
+    } else { // parent process
+        wait(NULL);
+        cout << " from parent process" << pid  << endl;
+    }
+    //execlp(cmd.currentToken.c_str(), cmd.tokenArgument.data()->c_str());
+}
+
+void processToken(command &cmd){
+    int i = 0;
+    for(;i<cmd.tokens.size();++i) {
+        if(cmd.currentToken == "") cmd.currentToken = cmd.tokens[i];
+        else cmd.tokenArgument.push_back(cmd.tokens[i]);
+        
+        if(cmd.tokens[i][0] == '|' || i == cmd.tokens.size()-1) forkandexec(cmd);
     }
 }
 
@@ -114,17 +132,24 @@ void processCommand(command &cmd){
     if(isBuildinCmd(cmd)){
         cmd.commandType = 1;
         if(cmd.tokens[0] == "setenv"){
-            cmd.currentTokenType = 7;
-            envs[cmd.tokens[1]] = cmd.tokens[2];
+
+            if(cmd.tokens.size() < 3){
+                cout << "loss parameters" << endl;
+                return;
+            } 
+            setenv(cmd.tokens[1].c_str(), cmd.tokens[2].c_str(), 1);
         } else if(cmd.tokens[0] == "printenv"){
-            cmd.currentTokenType = 8;
-            if(envs.find(cmd.tokens[1]) != envs.end()) cout << envs[cmd.tokens[1]] << endl;
+            if(cmd.tokens.size()<2){
+                cout << "loss parameters" << endl;
+                return;
+            } 
+
+            cout << getenv(cmd.tokens[1].c_str()) << endl;
         } else if(cmd.tokens[0] == "exit"){
-            cmd.currentTokenType = 9;
-            return;
+            exit(0);
         }
     } else {
-        cmd.currentTokenType = 2;
+        cmd.commandType = 2;
         processToken(cmd);
     }
 }
@@ -133,26 +158,29 @@ void executable(){
 
     string cmdLine;
     stringstream ss;
-
+    setenv("PATH" , "bin:.", 1);
     while(cout << "% " && getline(cin, cmdLine)){
         command currentcmd;
         
         cin.clear();
         ss << cmdLine;
         string token;
+        vector<string> tmp;
+        
+        while(ss>>token){
+            tmp.push_back(token);
+        }
 
-        while(!ss.str().empty()){
-            while(ss >> token ) {
-                currentcmd.tokens.push_back(token);
-                if((token[0] == 'i' || token[0] == 'i') && isdigit(token[1])){
-                    processCommand(currentcmd);
-                    if(currentcmd.currentTokenType == 9) return;
-                    break;
-                }
+        for(int i=0;i<tmp.size();++i){
+            currentcmd.tokens.push_back(tmp[i]);
+            if(isNumberPipe(tmp[i])){
+                processCommand(currentcmd);
+                currentcmd = command{};
+            } else if(i==tmp.size()-1){
+                processCommand(currentcmd);
+                currentcmd = command{};
             }
         }
-        if(currentcmd.currentTokenType == 9) return;
-        processCommand(currentcmd);
 
         ss.clear();
     }
