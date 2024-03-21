@@ -1,5 +1,6 @@
 #include<iostream>
 #include<string>
+#include<string.h>
 #include<sstream>
 #include<unistd.h>
 #include<map>
@@ -91,9 +92,21 @@ void pipe(){
 
 }
 
+char **buildArgv(vector<string> v, string cmdname){
+    int size = v.size() + 2;
+    char **argv = new char*[size];
+    argv[0] = new char[cmdname.size()];
+    strcpy(argv[0], cmdname.c_str());
+    for(int i=1;i<size-1;++i){
+        argv[i] = new char[v[i].size()];
+        strcpy(argv[i], v[i-1].c_str());
+    }
+    argv[size - 1] = NULL;
+    return argv;
+}
+
 void forkandexec(command &cmd){
 
-    
     int pid = fork();
     if(pid == 0) { // chld process
         
@@ -110,37 +123,21 @@ void forkandexec(command &cmd){
             if(cmd.previosOP != 0) dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
             break;
         }
-        close(pipes[pipes.size()-1].fd[0]);
-        close(pipes[pipes.size()-1].fd[1]);
-        int a = 0;
-        if(cmd.tokenArgument.data() == 0){
-            //cout << "case1" << endl;
-            a = execlp(cmd.currentToken.c_str(), cmd.currentToken.c_str(), 
-                NULL, NULL);
-        } else {
-            //cout << "case2" << endl;
-            a = execlp(cmd.currentToken.c_str(), cmd.currentToken.c_str(), 
-               cmd.tokenArgument.data()->c_str(), NULL);  
-        }
-        cout << "11" << endl;
-
-        if(a==-1) cerr << "Undefined command" << endl;
-        exit(0);
-    } else { // parent process
-        if(cmd.nextOP == 0){
+        if(pipes.size()>0){
             close(pipes[pipes.size()-1].fd[0]);
             close(pipes[pipes.size()-1].fd[1]);
         }
-        waitpid(-1, NULL, WNOHANG);
-        /*if(cmd.nextOP == 0){
-            while(waitpid(-1, NULL, WNOHANG)==0){
-                //cout << 1 << endl;
-                //sleep(1);
-            }
-        } else {
-            waitpid(pid, NULL, 0);
-        }*/
-        
+        int a = 0;
+        char **argv = buildArgv(cmd.tokenArgument, cmd.currentToken);
+        a = execvp(cmd.currentToken.c_str(), argv);
+        if(a==-1) cerr << "Undefined command" << endl;
+        exit(0);
+    } else { // parent process
+        if(cmd.nextOP == 0 && pipes.size()!=0){
+            close(pipes[pipes.size()-1].fd[0]);
+            close(pipes[pipes.size()-1].fd[1]);
+        }
+        waitpid(-1, NULL, 0);
     }
 }
 
