@@ -152,7 +152,6 @@ void forkandexec(command &cmd, int left){
         /*if(pipes.size()>0){
             cout << "fd[0]" << pipes[pipes.size()-1].fd[0] << "fd[1]" << pipes[pipes.size()-1].fd[1] << endl;
         }*/
-
         for(int i=0;i<numberPipes.size();++i){
             if(numberPipes[i].numberleft == 0){
                 close(numberPipes[i].fd[1]);
@@ -185,6 +184,8 @@ void forkandexec(command &cmd, int left){
                     if(cmd.nextOP == 3 || cmd.nextOP == 4){
                         int index = matchNumberPipeQueue(left);
                         if(index != -1){
+                            dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
+                            close(pipes[pipes.size()-1].fd[0]);
                             dup2(numberPipes[index].fd[1], STDOUT_FILENO);
                             if(cmd.nextOP == 4) dup2(numberPipes[index].fd[1], STDERR_FILENO);
                             close(numberPipes[index].fd[1]);
@@ -203,7 +204,7 @@ void forkandexec(command &cmd, int left){
                     close(pipes[pipes.size()-1].fd[0]);
                     int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
                     dup2(filefd, STDOUT_FILENO);
-                    //close(fd);
+                    close(filefd);
                 }
             }
         } else {
@@ -218,14 +219,13 @@ void forkandexec(command &cmd, int left){
             }else if(cmd.nextOP == 2){
                 int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
                 dup2(filefd, STDOUT_FILENO);
-                //close(fd);
+                close(filefd);
             } 
         } 
-
         int a = 0;
         char **argv = cmd.buildArgv();
         a = execvp(cmd.currentToken.c_str(), argv);
-        if(a==-1) cerr << "Undefined command" << endl;
+        if(a==-1) cerr << "Unknown command: [" << cmd.currentToken << "]" << endl;
         exit(0);
     } else { // parent process
         if(pipes.size()!=0) {
@@ -282,28 +282,29 @@ void processToken(command &cmd){
             
             cmd.previosOP = cmd.nextOP;
             if(i==cmd.tokens.size() - 1 ){
+                cmd.nextOP = 0;
                 if(cmd.isNumberPipe(cmd.tokens[i])){
                     cmd.setNextOP(cmd.tokens[i]);
-                    if(cmd.nextOP == 3 || cmd.nextOP ==4){
-                        left = stoi(cmd.tokens[i].substr(1));
-                        int inPipeQueue = matchNumberPipeQueue(left);
-                        if(inPipeQueue == -1){
-                            numberPipes.push_back(pipestruct{});
-                            if(pipe(numberPipes[numberPipes.size()-1].fd)<0){
-                                cerr << "pipe error!" << endl;
-                            }
-                            numberPipes[numberPipes.size()-1].pipetype = cmd.nextOP == 3 ? 3 : 4;
-                            numberPipes[numberPipes.size()-1].numberleft = left;
+                    //if(cmd.nextOP == 3 || cmd.nextOP ==4){
+                    left = stoi(cmd.tokens[i].substr(1));
+                    int inPipeQueue = matchNumberPipeQueue(left);
+                    if(inPipeQueue == -1){
+                        numberPipes.push_back(pipestruct{});
+                        if(pipe(numberPipes[numberPipes.size()-1].fd)<0){
+                            cerr << "pipe error!" << endl;
                         }
-                    } else {
+                        numberPipes[numberPipes.size()-1].pipetype = cmd.nextOP == 3 ? 3 : 4;
+                        numberPipes[numberPipes.size()-1].numberleft = left;
+                    }
+                    /*} else {
                         pipes.push_back(pipestruct{});
                         if(pipe(pipes[pipes.size()-1].fd) < 0) {
                             cerr << "create pipe fail" << endl;
                         }
-                    }
-                } else {
+                    }*/
+                } /*else {
                     cmd.nextOP = 0;
-                }
+                }*/
             } 
             else {
                 cmd.setNextOP(cmd.tokens[i]);
