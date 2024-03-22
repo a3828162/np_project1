@@ -155,7 +155,6 @@ void forkandexec(command &cmd, int left){
 
         for(int i=0;i<numberPipes.size();++i){
             if(numberPipes[i].numberleft == 0){
-                cout << "FD:" << numberPipes[i].fd[0] << endl;
                 close(numberPipes[i].fd[1]);
                 dup2(numberPipes[i].fd[0], STDIN_FILENO);
                 close(numberPipes[i].fd[0]); 
@@ -260,7 +259,6 @@ void forkandexec(command &cmd, int left){
 
         for(int i=0;i<numberPipes.size();++i){
             if(numberPipes[i].numberleft == 0){
-                cout << "FD:" << numberPipes[i].fd[0] << endl;
                 close(numberPipes[i].fd[1]);
                 close(numberPipes[i].fd[0]); 
             }
