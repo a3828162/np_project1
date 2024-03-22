@@ -115,19 +115,35 @@ struct pipestruct
 {
     pipestruct() : numberleft(0), pipetype(0) {}
     int numberleft; 
-    int pipetype; // 1 : | , 2 : ! , 3 : |1 , 4 : !1
+    int pipetype; // 0 : init, 1 : | , 2 : ! , 3 : |1 , 4 : !1
     int fd[2];
 };
 
 vector<pipestruct> pipes;
-map<string, string> envs;
+vector<pipestruct> numberPipes;
 
 bool isBuildinCmd(command currentcmd){
     return currentcmd.tokens[0] == "setenv" || currentcmd.tokens[0] == "printenv" || currentcmd.tokens[0] == "exit";
 }
 
-void forkandexec(command &cmd){
+int matchNumberPipeQueue(int left){
+    for(int i=0;i<numberPipes.size();++i){
+        if(left == numberPipes[i].numberleft) return i;
+    }
+    return -1;
+}
 
+void decreaseNumberPipeLeft(){
+    for(int i = 0;i<numberPipes.size();++i){
+        --numberPipes[i].numberleft;
+        if(numberPipes[i].numberleft < 0){
+            numberPipes.erase(numberPipes.begin()+i);
+            --i;
+        } 
+    }
+}
+
+void forkandexec(command &cmd, int left){
     int pid = fork();
     if(pid < 0) {
         cerr << "fork error!" << endl;
@@ -136,37 +152,76 @@ void forkandexec(command &cmd){
         /*if(pipes.size()>0){
             cout << "fd[0]" << pipes[pipes.size()-1].fd[0] << "fd[1]" << pipes[pipes.size()-1].fd[1] << endl;
         }*/
+
+        for(int i=0;i<numberPipes.size();++i){
+            if(numberPipes[i].numberleft == 0){
+                cout << "FD:" << numberPipes[i].fd[0] << endl;
+                close(numberPipes[i].fd[1]);
+                dup2(numberPipes[i].fd[0], STDIN_FILENO);
+                close(numberPipes[i].fd[0]); 
+            }
+        }
+
         if(pipes.size()!=0){
             if(cmd.previosOP == 0 && cmd.nextOP != 0) {
                 
+                /*if(cmd.nextOP == 3 || cmd.nextOP == 4){
+                    dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                    if(cmd.nextOP == 4){
+                        dup2(pipes[pipes.size()-1].fd[1], STDERR_FILENO);
+                    } 
+                    close(pipes[pipes.size()-1].fd[1]);
+                    close(pipes[pipes.size()-1].fd[0]);
+                }else {*/
                 dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
                 close(pipes[pipes.size()-1].fd[1]);
                 close(pipes[pipes.size()-1].fd[0]);
+                //}
             } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
                 dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
                 close(pipes[pipes.size()-1].fd[0]);
                 //close(pipes[pipes.size()-1].fd[1]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
                 if(cmd.nextOP != 2){
-                    dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
-                    close(pipes[pipes.size()-2].fd[0]);
-                    dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
-                    close(pipes[pipes.size()-1].fd[1]);
-                    close(pipes[pipes.size()-1].fd[0]);     
+                    if(cmd.nextOP == 3 || cmd.nextOP == 4){
+                        int index = matchNumberPipeQueue(left);
+                        if(index != -1){
+                            dup2(numberPipes[index].fd[1], STDOUT_FILENO);
+                            if(cmd.nextOP == 4) dup2(numberPipes[index].fd[1], STDERR_FILENO);
+                            close(numberPipes[index].fd[1]);
+                            close(numberPipes[index].fd[0]);
+                        }   
+                    }else{
+                        dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
+                        close(pipes[pipes.size()-2].fd[0]);
+                        dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                        close(pipes[pipes.size()-1].fd[1]);
+                        close(pipes[pipes.size()-1].fd[0]);  
+                    }
+
                 } else {
                     dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
                     close(pipes[pipes.size()-1].fd[0]);
                     int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
                     dup2(filefd, STDOUT_FILENO);
-                    //close(fd)
+                    //close(fd);
                 }
-           
             }
-        } else if(cmd.nextOP == 2){
-            int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
-            dup2(filefd, STDOUT_FILENO);
-            //close(fd);
-        }
+        } else {
+            if(cmd.previosOP == 0 && (cmd.nextOP == 3 || cmd.nextOP == 4) && left != 0){
+                int index = matchNumberPipeQueue(left);
+                if(index != -1){
+                    dup2(numberPipes[index].fd[1], STDOUT_FILENO);
+                    if(cmd.nextOP == 4) dup2(numberPipes[index].fd[1], STDERR_FILENO);
+                    close(numberPipes[index].fd[1]);
+                    close(numberPipes[index].fd[0]);
+                }
+            }else if(cmd.nextOP == 2){
+                int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+                dup2(filefd, STDOUT_FILENO);
+                //close(fd);
+            } 
+        } 
 
         int a = 0;
         char **argv = cmd.buildArgv();
@@ -177,39 +232,81 @@ void forkandexec(command &cmd){
         if(pipes.size()!=0) {
             if(cmd.previosOP == 0 && cmd.nextOP != 0) {
                 if(cmd.nextOP != 2){
-                    close(pipes[pipes.size()-1].fd[1]);
+                    if(cmd.nextOP == 3 || cmd.nextOP == 4){
+
+                        //close(pipes[pipes.size()-1].fd[1]);
+                        //numberPipes.push_back(pipes[pipes.size()-1]);
+                    } else {
+                        close(pipes[pipes.size()-1].fd[1]);
+                    }
                 }
             } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
                 close(pipes[pipes.size()-1].fd[0]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
                 if(cmd.nextOP != 2){
-                    close(pipes[pipes.size()-2].fd[0]);
-                    close(pipes[pipes.size()-1].fd[1]);
+                    if(cmd.nextOP == 3 || cmd.nextOP == 4){
+                        //close(pipes[pipes.size()-2].fd[0]);
+                        close(pipes[pipes.size()-1].fd[0]);
+                        //numberPipes.push_back(pipes[pipes.size()-1]);
+                    } else {
+                        close(pipes[pipes.size()-2].fd[0]);
+                        close(pipes[pipes.size()-1].fd[1]);
+                    }
                 } else {
                     close(pipes[pipes.size()-1].fd[0]);
                 }
             }
         }
 
+        for(int i=0;i<numberPipes.size();++i){
+            if(numberPipes[i].numberleft == 0){
+                cout << "FD:" << numberPipes[i].fd[0] << endl;
+                close(numberPipes[i].fd[1]);
+                close(numberPipes[i].fd[0]); 
+            }
+        }
+
         while(waitpid(-1, NULL, WNOHANG) == 0); 
+
     }
 }
 
 void processToken(command &cmd){
 
     // 記得把 parent process pipe fd要關掉
-    int i = 0, leftPipeIndex = -1, rightPipeIndex = -1;
+    int i = 0, left = 0;
 
     for(;i<cmd.tokens.size();++i) {
         if(cmd.currentToken == "") cmd.currentToken = cmd.tokens[i];
         else if(!cmd.isOPToken(cmd.tokens[i])) cmd.tokenArgument.push_back(cmd.tokens[i]);
-        //else if(cmd.tokens[i][0] != '|') cmd.tokenArgument.push_back(cmd.tokens[i]);
         
-        //if(cmd.tokens[i][0] == '|' || i == cmd.tokens.size()-1){
         if(cmd.isOPToken(cmd.tokens[i]) || i == cmd.tokens.size()-1){
             
             cmd.previosOP = cmd.nextOP;
-            if(i==cmd.tokens.size() - 1) cmd.nextOP = 0;
+            if(i==cmd.tokens.size() - 1 ){
+                if(cmd.isNumberPipe(cmd.tokens[i])){
+                    cmd.setNextOP(cmd.tokens[i]);
+                    if(cmd.nextOP == 3 || cmd.nextOP ==4){
+                        left = stoi(cmd.tokens[i].substr(1));
+                        int inPipeQueue = matchNumberPipeQueue(left);
+                        if(inPipeQueue == -1){
+                            numberPipes.push_back(pipestruct{});
+                            if(pipe(numberPipes[numberPipes.size()-1].fd)<0){
+                                cerr << "pipe error!" << endl;
+                            }
+                            numberPipes[numberPipes.size()-1].pipetype = cmd.nextOP == 3 ? 3 : 4;
+                            numberPipes[numberPipes.size()-1].numberleft = left;
+                        }
+                    } else {
+                        pipes.push_back(pipestruct{});
+                        if(pipe(pipes[pipes.size()-1].fd) < 0) {
+                            cerr << "create pipe fail" << endl;
+                        }
+                    }
+                } else {
+                    cmd.nextOP = 0;
+                }
+            } 
             else {
                 cmd.setNextOP(cmd.tokens[i]);
                 if(cmd.nextOP != 2){
@@ -218,27 +315,22 @@ void processToken(command &cmd){
                         cerr << "create pipe fail" << endl;
                     }
                 }
-                
-                //cmd.nextOP = 1;
             }
 
             if(cmd.nextOP == 2){
                 if(i+1 < cmd.tokens.size()){
                     cmd.redirectFileName = cmd.tokens[i+1];
                     cmd.tokens.pop_back();
-                }
+                } 
             }
             
-            forkandexec(cmd);
+            forkandexec(cmd, left);
             cmd.currentToken = "";
             cmd.tokenArgument.clear();
         } 
     }
-    /*for(int i=0;i<pipes.size();++i){
-        close(pipes[i].fd[0]);
-        close(pipes[i].fd[1]);
-    }
-    pipes.clear();*/
+    decreaseNumberPipeLeft();
+    pipes.clear();
 }
 
 void processCommand(command &cmd){
@@ -302,30 +394,3 @@ int main(){
     
     return 0;
 }
-
-// pipe example
-    /*char *cm1[2] = {"ls", NULL};
-    char *cm2[2] = {"cat", NULL};
-
-    int f[2];
-    if(pipe(f)<0) cerr << "error" << endl;
-    if(fork()==0){
-        //close(f[0]);
-        dup2(f[1], STDOUT_FILENO);
-        //close(f[1]);
-        execvp(cm1[0],cm1);
-    }else{
-        if(fork()==0){
-            dup2(f[0], STDIN_FILENO);
-            close(f[0]);
-            close(f[1]);
-            execvp(cm2[0],cm2);
-        }
-        else {
-            //close(f[0]);
-            close(f[1]);
-            wait(NULL);
-            wait(NULL);
-        }
-
-    }*/
