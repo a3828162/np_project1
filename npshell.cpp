@@ -143,9 +143,14 @@ void decreaseNumberPipeLeft(){
 }
 
 void forkandexec(command &cmd, int left){
+
+    RE:
     int pid = fork();
     if(pid < 0) {
-        cerr << "fork error!" << endl;
+        //cerr << "fork error!" << endl;
+        int status = 0;
+		while(waitpid(-1,&status,WNOHANG) > 0){}
+		goto RE;
     }else if(pid == 0) { // chld process
 
         /*if(pipes.size()>0){
@@ -224,7 +229,7 @@ void forkandexec(command &cmd, int left){
         int a = 0;
         char **argv = cmd.buildArgv();
         a = execvp(cmd.currentToken.c_str(), argv);
-        if(a==-1) cerr << "Unknown command: [" << cmd.currentToken << "]" << endl;
+        if(a==-1) cerr << "Unknown command: [" << cmd.currentToken << "]." << endl;
         exit(0);
     } else { // parent process
         if(pipes.size()!=0) {
@@ -264,11 +269,16 @@ void forkandexec(command &cmd, int left){
         }
 
         int status = 0;
-        if(cmd.nextOP == 0){
+        if(cmd.nextOP == 1){
+            waitpid(-1,&status,WNOHANG);
+        } else {
+            waitpid(pid,&status, 0);
+        }
+        /*if(cmd.nextOP == 0 || cmd.nextOP == 2 || ){
             waitpid(pid,&status, 0);
         } else {
             waitpid(-1,&status,WNOHANG);
-        }
+        }*/
     }
 }
 
@@ -350,8 +360,10 @@ void processCommand(command &cmd){
                 cerr << "loss parameters" << endl;
                 return;
             } 
-
-            cout << getenv(cmd.tokens[1].c_str()) << endl;
+            
+            if(getenv(cmd.tokens[1].c_str())){
+                cout << getenv(cmd.tokens[1].c_str()) << endl;
+            }
             
         } else if(cmd.tokens[0] == "exit"){
             exit(0);
