@@ -15,7 +15,9 @@ int main(int argc, char* const argv[]) {
   string line;
   int lineno = 0;
   while (getline(cin, line)) {
+    cout << "111111111" << endl;
     cout << setw(4) << setfill(' ') << ++lineno << ' ' << line << endl;
   }
+  cout << "22222222222" << endl;
   return 0;
 }

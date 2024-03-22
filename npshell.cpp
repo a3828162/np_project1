@@ -105,44 +105,81 @@ char **buildArgv(vector<string> v, string cmdname){
     return argv;
 }
 
-void forkandexec(command &cmd){
+void forkandexec(command &cmd, int leftPipeIndex, int rightPipeIndex){
 
     int pid = fork();
     if(pid == 0) { // chld process
-        
-        //cout << "PreviosOp:" << cmd.previosOP << endl;
-        //cout << "NextOp:" << cmd.nextOP << endl;
-        switch (cmd.nextOP)
-        {
-        case 1:
 
-            if(cmd.previosOP != 0) dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
-            if(cmd.nextOP != 0) dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
-            break;
-        default:
-            if(cmd.previosOP != 0) dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
-            break;
+        /*if(pipes.size()>0){
+            cout << "fd[0]" << pipes[pipes.size()-1].fd[0] << "fd[1]" << pipes[pipes.size()-1].fd[1] << endl;
+        }*/
+        if(pipes.size()!=0){
+            if(cmd.previosOP == 0 && cmd.nextOP != 0) {
+                dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                close(pipes[pipes.size()-1].fd[1]);
+                close(pipes[pipes.size()-1].fd[0]);
+            } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
+                dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
+                close(pipes[pipes.size()-1].fd[0]);
+                //close(pipes[pipes.size()-1].fd[1]);
+            } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
+                dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
+                close(pipes[pipes.size()-2].fd[0]);
+                dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                close(pipes[pipes.size()-1].fd[1]);
+                close(pipes[pipes.size()-1].fd[0]);                
+            }
         }
-        if(pipes.size()>0){
-            close(pipes[pipes.size()-1].fd[0]);
-            close(pipes[pipes.size()-1].fd[1]);
-        }
+
         int a = 0;
         char **argv = buildArgv(cmd.tokenArgument, cmd.currentToken);
         a = execvp(cmd.currentToken.c_str(), argv);
         if(a==-1) cerr << "Undefined command" << endl;
         exit(0);
     } else { // parent process
-        if(cmd.nextOP == 0 && pipes.size()!=0){
-            close(pipes[pipes.size()-1].fd[0]);
-            close(pipes[pipes.size()-1].fd[1]);
+        if(pipes.size()!=0) {
+            if(cmd.previosOP == 0 && cmd.nextOP != 0) {
+                close(pipes[pipes.size()-1].fd[1]);
+            } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
+                close(pipes[pipes.size()-1].fd[0]);
+            } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
+                close(pipes[pipes.size()-2].fd[0]);
+                close(pipes[pipes.size()-1].fd[1]);
+            }
         }
-        waitpid(-1, NULL, 0);
+
+        while(waitpid(-1, NULL, WNOHANG) == 0); 
     }
 }
 
 void processToken(command &cmd){
-    int i = 0;
+    /*char *cm1[2] = {"ls", NULL};
+    char *cm2[2] = {"cat", NULL};
+
+    int f[2];
+    if(pipe(f)<0) cerr << "error" << endl;
+    if(fork()==0){
+        //close(f[0]);
+        dup2(f[1], STDOUT_FILENO);
+        //close(f[1]);
+        execvp(cm1[0],cm1);
+    }else{
+        if(fork()==0){
+            dup2(f[0], STDIN_FILENO);
+            close(f[0]);
+            close(f[1]);
+            execvp(cm2[0],cm2);
+        }
+        else {
+            //close(f[0]);
+            close(f[1]);
+            wait(NULL);
+            wait(NULL);
+        }
+
+    }*/
+    // 記得把 parent process pipe fd要關掉
+    int i = 0, leftPipeIndex = -1, rightPipeIndex = -1;
 
     for(;i<cmd.tokens.size();++i) {
         if(cmd.currentToken == "") cmd.currentToken = cmd.tokens[i];
@@ -152,19 +189,23 @@ void processToken(command &cmd){
             cmd.previosOP = cmd.nextOP;
             if(i==cmd.tokens.size() - 1) cmd.nextOP = 0;
             else {
-                cmd.nextOP = 1;
                 pipes.push_back(pipestruct{});
                 if(pipe(pipes[pipes.size()-1].fd) < 0) {
                     cerr << "create pipe fail" << endl;
                 } 
+                cmd.nextOP = 1;
             }
             
-            forkandexec(cmd);
+            forkandexec(cmd, 0, 0);
             cmd.currentToken = "";
             cmd.tokenArgument.clear();
         } 
-        
     }
+    /*for(int i=0;i<pipes.size();++i){
+        close(pipes[i].fd[0]);
+        close(pipes[i].fd[1]);
+    }
+    pipes.clear();*/
 }
 
 void processCommand(command &cmd){
@@ -200,7 +241,6 @@ void executable(){
     while(cout << "% " && getline(cin, cmdLine)){
         command currentcmd;
         
-        cin.clear();
         ss << cmdLine;
         string token;
         vector<string> tmp;
