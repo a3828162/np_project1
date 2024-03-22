@@ -26,11 +26,10 @@ operationType
 3 : |1
 4 : ?1
 */
-/*void signal_child(int signal){
-    int status;
-    wait(&status);
-    return;
-}*/
+void signal_child(int signal){
+	int status;
+	while(waitpid(-1,&status,WNOHANG) > 0){}
+}
 
 class command
 {
@@ -264,8 +263,12 @@ void forkandexec(command &cmd, int left){
             }
         }
 
-        while(waitpid(-1, NULL, WNOHANG) == 0); 
-
+        int status = 0;
+        if(cmd.nextOP == 0){
+            waitpid(pid,&status, 0);
+        } else {
+            waitpid(-1,&status,WNOHANG);
+        }
     }
 }
 
@@ -389,7 +392,7 @@ void executable(){
 
 int main(){
     //void signal_child(int);
-    //signal(SIGCHLD, signal_child);
+    signal(SIGCHLD, signal_child);
     setenv("PATH" , "bin:.", 1);
     executable();
     
