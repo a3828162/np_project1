@@ -8,6 +8,7 @@
 #include<vector>
 #include<queue>
 #include<sys/wait.h>
+#include<fcntl.h>
 using namespace std;
 
 /*
@@ -39,6 +40,7 @@ public:
     int nextOP;
     int state;
     int numberpipeleft;
+    string redirectFileName;
     string currentToken;
     vector<string> tokenArgument;
     vector<string> tokens;
@@ -56,6 +58,7 @@ command::command(/* args */)
     state = 0;
     numberpipeleft = 0;
     currentToken = "";
+    redirectFileName = "";
     commandType = 0;
     nextOP = 0;
     previosOP = 0;
@@ -126,13 +129,16 @@ bool isBuildinCmd(command currentcmd){
 void forkandexec(command &cmd){
 
     int pid = fork();
-    if(pid == 0) { // chld process
+    if(pid < 0) {
+        cerr << "fork error!" << endl;
+    }else if(pid == 0) { // chld process
 
         /*if(pipes.size()>0){
             cout << "fd[0]" << pipes[pipes.size()-1].fd[0] << "fd[1]" << pipes[pipes.size()-1].fd[1] << endl;
         }*/
         if(pipes.size()!=0){
             if(cmd.previosOP == 0 && cmd.nextOP != 0) {
+                
                 dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
                 close(pipes[pipes.size()-1].fd[1]);
                 close(pipes[pipes.size()-1].fd[0]);
@@ -141,12 +147,25 @@ void forkandexec(command &cmd){
                 close(pipes[pipes.size()-1].fd[0]);
                 //close(pipes[pipes.size()-1].fd[1]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
-                dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
-                close(pipes[pipes.size()-2].fd[0]);
-                dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
-                close(pipes[pipes.size()-1].fd[1]);
-                close(pipes[pipes.size()-1].fd[0]);                
+                if(cmd.nextOP != 2){
+                    dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
+                    close(pipes[pipes.size()-2].fd[0]);
+                    dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                    close(pipes[pipes.size()-1].fd[1]);
+                    close(pipes[pipes.size()-1].fd[0]);     
+                } else {
+                    dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
+                    close(pipes[pipes.size()-1].fd[0]);
+                    int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+                    dup2(filefd, STDOUT_FILENO);
+                    //close(fd)
+                }
+           
             }
+        } else if(cmd.nextOP == 2){
+            int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+            dup2(filefd, STDOUT_FILENO);
+            //close(fd);
         }
 
         int a = 0;
@@ -157,12 +176,18 @@ void forkandexec(command &cmd){
     } else { // parent process
         if(pipes.size()!=0) {
             if(cmd.previosOP == 0 && cmd.nextOP != 0) {
-                close(pipes[pipes.size()-1].fd[1]);
+                if(cmd.nextOP != 2){
+                    close(pipes[pipes.size()-1].fd[1]);
+                }
             } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
                 close(pipes[pipes.size()-1].fd[0]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
-                close(pipes[pipes.size()-2].fd[0]);
-                close(pipes[pipes.size()-1].fd[1]);
+                if(cmd.nextOP != 2){
+                    close(pipes[pipes.size()-2].fd[0]);
+                    close(pipes[pipes.size()-1].fd[1]);
+                } else {
+                    close(pipes[pipes.size()-1].fd[0]);
+                }
             }
         }
 
@@ -186,12 +211,22 @@ void processToken(command &cmd){
             cmd.previosOP = cmd.nextOP;
             if(i==cmd.tokens.size() - 1) cmd.nextOP = 0;
             else {
-                pipes.push_back(pipestruct{});
-                if(pipe(pipes[pipes.size()-1].fd) < 0) {
-                    cerr << "create pipe fail" << endl;
+                cmd.setNextOP(cmd.tokens[i]);
+                if(cmd.nextOP != 2){
+                    pipes.push_back(pipestruct{});
+                    if(pipe(pipes[pipes.size()-1].fd) < 0) {
+                        cerr << "create pipe fail" << endl;
+                    }
                 }
-                 
-                cmd.nextOP = 1;
+                
+                //cmd.nextOP = 1;
+            }
+
+            if(cmd.nextOP == 2){
+                if(i+1 < cmd.tokens.size()){
+                    cmd.redirectFileName = cmd.tokens[i+1];
+                    cmd.tokens.pop_back();
+                }
             }
             
             forkandexec(cmd);
