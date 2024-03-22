@@ -40,6 +40,9 @@ Thumbs.db
 # Build
 build/
 
+# npshell
+npshell
+
 # Applications
 *.app
 *.exe

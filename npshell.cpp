@@ -18,27 +18,12 @@ commandType
 */
 
 /*
-tokenType
-0 : init
-1 : cat
-2 : ls
-3 : loop
-4 : noop
-5 : removetag
-6 : removetag0
-7 : setenv
-8 : printenv
-9 : exit
-*/
-
-/*
 operationType
 0 : init
-1 : >
-2 : |
-3 ; !
-4 : |1
-5 : ?1
+1 : |
+2 : >
+3 : |1
+4 : ?1
 */
 /*void signal_child(int signal){
     int status;
@@ -46,19 +31,82 @@ operationType
     return;
 }*/
 
-struct command
+class command
 {
-    command() : state(0), numberpipeleft(0), currentToken(""),
-                commandType(0), previosOP(0), nextOP(0) {}
+public:
     int commandType;
     int previosOP;
     int nextOP;
-    string currentToken;
-    vector<string> tokenArgument;
     int state;
     int numberpipeleft;
+    string currentToken;
+    vector<string> tokenArgument;
     vector<string> tokens;
+
+    bool isNumberPipe(string token);
+    bool isOPToken(string token);
+    void setNextOP(string token);
+    char **buildArgv();
+    command(/* args */);
+    ~command();
 };
+
+command::command(/* args */)
+{
+    state = 0;
+    numberpipeleft = 0;
+    currentToken = "";
+    commandType = 0;
+    nextOP = 0;
+    previosOP = 0;
+}
+
+command::~command()
+{
+    tokens.clear();
+    tokenArgument.clear();
+}
+
+bool command::isNumberPipe(string token){
+    if(token.size()<2) return false;
+    return (token[0]=='|'||token[0]=='!')&&isdigit(token[1]);
+}
+
+bool command::isOPToken(string token){
+    if(token == "|" || token == ">"){
+        return true;
+    }else if(token.size() >= 2 &&
+     (token[0] == '|' || token[0] == '!') &&
+     isdigit(token[1])){
+        return true;
+    }
+
+    return false;
+}
+
+void command::setNextOP(string token){
+    if(token == "|"){
+        nextOP = 1;
+    } else if(token == ">"){
+        nextOP = 2;
+    } else if(token.size()>=2){
+        if(token[0] == '|' && isdigit(token[1])) nextOP = 3;
+        else if(token[0] = '!' && isdigit(token[1])) nextOP = 4;
+    }
+}
+
+char **command::buildArgv(){
+    int size = tokenArgument.size() + 2;
+    char **argv = new char*[size];
+    argv[0] = new char[currentToken.size()];
+    strcpy(argv[0], currentToken.c_str());
+    for(int i=1;i<size-1;++i){
+        argv[i] = new char[tokenArgument[i].size()];
+        strcpy(argv[i], tokenArgument[i-1].c_str());
+    }
+    argv[size - 1] = NULL;
+    return argv;
+}
 
 struct pipestruct
 {
@@ -75,37 +123,7 @@ bool isBuildinCmd(command currentcmd){
     return currentcmd.tokens[0] == "setenv" || currentcmd.tokens[0] == "printenv" || currentcmd.tokens[0] == "exit";
 }
 
-bool isNumberPipe(string token){
-    if(token.size()<2) return false;
-    return (token[0]=='|'||token[0]=='!')&&isdigit(token[1]);
-}
-
-void writetofile(){
-
-}
-
-void numberpipe(){
-
-}
-
-void pipe(){
-
-}
-
-char **buildArgv(vector<string> v, string cmdname){
-    int size = v.size() + 2;
-    char **argv = new char*[size];
-    argv[0] = new char[cmdname.size()];
-    strcpy(argv[0], cmdname.c_str());
-    for(int i=1;i<size-1;++i){
-        argv[i] = new char[v[i].size()];
-        strcpy(argv[i], v[i-1].c_str());
-    }
-    argv[size - 1] = NULL;
-    return argv;
-}
-
-void forkandexec(command &cmd, int leftPipeIndex, int rightPipeIndex){
+void forkandexec(command &cmd){
 
     int pid = fork();
     if(pid == 0) { // chld process
@@ -132,7 +150,7 @@ void forkandexec(command &cmd, int leftPipeIndex, int rightPipeIndex){
         }
 
         int a = 0;
-        char **argv = buildArgv(cmd.tokenArgument, cmd.currentToken);
+        char **argv = cmd.buildArgv();
         a = execvp(cmd.currentToken.c_str(), argv);
         if(a==-1) cerr << "Undefined command" << endl;
         exit(0);
@@ -153,50 +171,30 @@ void forkandexec(command &cmd, int leftPipeIndex, int rightPipeIndex){
 }
 
 void processToken(command &cmd){
-    /*char *cm1[2] = {"ls", NULL};
-    char *cm2[2] = {"cat", NULL};
 
-    int f[2];
-    if(pipe(f)<0) cerr << "error" << endl;
-    if(fork()==0){
-        //close(f[0]);
-        dup2(f[1], STDOUT_FILENO);
-        //close(f[1]);
-        execvp(cm1[0],cm1);
-    }else{
-        if(fork()==0){
-            dup2(f[0], STDIN_FILENO);
-            close(f[0]);
-            close(f[1]);
-            execvp(cm2[0],cm2);
-        }
-        else {
-            //close(f[0]);
-            close(f[1]);
-            wait(NULL);
-            wait(NULL);
-        }
-
-    }*/
     // 記得把 parent process pipe fd要關掉
     int i = 0, leftPipeIndex = -1, rightPipeIndex = -1;
 
     for(;i<cmd.tokens.size();++i) {
         if(cmd.currentToken == "") cmd.currentToken = cmd.tokens[i];
-        else if(cmd.tokens[i][0] != '|') cmd.tokenArgument.push_back(cmd.tokens[i]);
+        else if(!cmd.isOPToken(cmd.tokens[i])) cmd.tokenArgument.push_back(cmd.tokens[i]);
+        //else if(cmd.tokens[i][0] != '|') cmd.tokenArgument.push_back(cmd.tokens[i]);
         
-        if(cmd.tokens[i][0] == '|' || i == cmd.tokens.size()-1){
+        //if(cmd.tokens[i][0] == '|' || i == cmd.tokens.size()-1){
+        if(cmd.isOPToken(cmd.tokens[i]) || i == cmd.tokens.size()-1){
+            
             cmd.previosOP = cmd.nextOP;
             if(i==cmd.tokens.size() - 1) cmd.nextOP = 0;
             else {
                 pipes.push_back(pipestruct{});
                 if(pipe(pipes[pipes.size()-1].fd) < 0) {
                     cerr << "create pipe fail" << endl;
-                } 
+                }
+                 
                 cmd.nextOP = 1;
             }
             
-            forkandexec(cmd, 0, 0);
+            forkandexec(cmd);
             cmd.currentToken = "";
             cmd.tokenArgument.clear();
         } 
@@ -251,10 +249,7 @@ void executable(){
 
         for(int i=0;i<tmp.size();++i){
             currentcmd.tokens.push_back(tmp[i]);
-            if(isNumberPipe(tmp[i])){
-                processCommand(currentcmd);
-                currentcmd = command{};
-            } else if(i==tmp.size()-1){
+            if(currentcmd.isNumberPipe(tmp[i]) || i == tmp.size() - 1){
                 processCommand(currentcmd);
                 currentcmd = command{};
             }
@@ -272,3 +267,30 @@ int main(){
     
     return 0;
 }
+
+// pipe example
+    /*char *cm1[2] = {"ls", NULL};
+    char *cm2[2] = {"cat", NULL};
+
+    int f[2];
+    if(pipe(f)<0) cerr << "error" << endl;
+    if(fork()==0){
+        //close(f[0]);
+        dup2(f[1], STDOUT_FILENO);
+        //close(f[1]);
+        execvp(cm1[0],cm1);
+    }else{
+        if(fork()==0){
+            dup2(f[0], STDIN_FILENO);
+            close(f[0]);
+            close(f[1]);
+            execvp(cm2[0],cm2);
+        }
+        else {
+            //close(f[0]);
+            close(f[1]);
+            wait(NULL);
+            wait(NULL);
+        }
+
+    }*/
