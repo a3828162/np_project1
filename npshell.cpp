@@ -269,6 +269,7 @@ void forkandexec(command &cmd, int left){
         }
 
         int status = 0;
+        usleep(1000*300);
         if(cmd.nextOP == 1 || cmd.nextOP == 3 || cmd.nextOP == 4){
             waitpid(-1,&status,WNOHANG);
         } else {
