@@ -328,7 +328,7 @@ void processToken(command &cmd){
             cmd.tokenArgument.clear();
         } 
     }
-    decreaseNumberPipeLeft();
+    //decreaseNumberPipeLeft();
     pipes.clear();
 }
 
@@ -349,12 +349,15 @@ void processCommand(command &cmd){
             } 
 
             cout << getenv(cmd.tokens[1].c_str()) << endl;
+            
         } else if(cmd.tokens[0] == "exit"){
             exit(0);
         }
+        decreaseNumberPipeLeft();
     } else {
         cmd.commandType = 2;
         processToken(cmd);
+        decreaseNumberPipeLeft();
     }
 }
 
@@ -372,7 +375,6 @@ void executable(){
         while(ss>>token){
             tmp.push_back(token);
         }
-
         for(int i=0;i<tmp.size();++i){
             currentcmd.tokens.push_back(tmp[i]);
             if(currentcmd.isNumberPipe(tmp[i]) || i == tmp.size() - 1){
