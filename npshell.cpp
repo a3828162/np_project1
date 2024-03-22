@@ -144,13 +144,13 @@ void decreaseNumberPipeLeft(){
 
 void forkandexec(command &cmd, int left){
 
-    RE:
+    //RE:
     int pid = fork();
     if(pid < 0) {
         //cerr << "fork error!" << endl;
         int status = 0;
 		while(waitpid(-1,&status,WNOHANG) > 0){}
-		goto RE;
+		//goto RE;
     }else if(pid == 0) { // chld process
 
         /*if(pipes.size()>0){
