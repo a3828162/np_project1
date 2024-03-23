@@ -37,11 +37,9 @@ public:
     int commandType;
     int previosOP;
     int nextOP;
-    int state;
-    int numberpipeleft;
     string redirectFileName;
-    string currentToken;
-    vector<string> tokenArgument;
+    string currentCommand;
+    vector<string> commandArgument;
     vector<string> tokens;
 
     bool isNumberPipe(string token);
@@ -54,9 +52,7 @@ public:
 
 command::command(/* args */)
 {
-    state = 0;
-    numberpipeleft = 0;
-    currentToken = "";
+    currentCommand = "";
     redirectFileName = "";
     commandType = 0;
     nextOP = 0;
@@ -66,7 +62,7 @@ command::command(/* args */)
 command::~command()
 {
     tokens.clear();
-    tokenArgument.clear();
+    commandArgument.clear();
 }
 
 bool command::isNumberPipe(string token){
@@ -98,13 +94,13 @@ void command::setNextOP(string token){
 }
 
 char **command::buildArgv(){
-    int size = tokenArgument.size() + 2;
+    int size = commandArgument.size() + 2;
     char **argv = new char*[size];
-    argv[0] = new char[currentToken.size()];
-    strcpy(argv[0], currentToken.c_str());
+    argv[0] = new char[currentCommand.size()];
+    strcpy(argv[0], currentCommand.c_str());
     for(int i=1;i<size-1;++i){
-        argv[i] = new char[tokenArgument[i].size()];
-        strcpy(argv[i], tokenArgument[i-1].c_str());
+        argv[i] = new char[commandArgument[i].size()];
+        strcpy(argv[i], commandArgument[i-1].c_str());
     }
     argv[size - 1] = NULL;
     return argv;
@@ -144,18 +140,12 @@ void decreaseNumberPipeLeft(){
 
 void forkandexec(command &cmd, int left){
 
-    //RE:
     int pid = fork();
     if(pid < 0) {
-        //cerr << "fork error!" << endl;
         int status = 0;
 		while(waitpid(-1,&status,WNOHANG) > 0){}
-		//goto RE;
     }else if(pid == 0) { // chld process
 
-        /*if(pipes.size()>0){
-            cout << "fd[0]" << pipes[pipes.size()-1].fd[0] << "fd[1]" << pipes[pipes.size()-1].fd[1] << endl;
-        }*/
         for(int i=0;i<numberPipes.size();++i){
             if(numberPipes[i].numberleft == 0){
                 close(numberPipes[i].fd[1]);
@@ -218,35 +208,26 @@ void forkandexec(command &cmd, int left){
         } 
         int a = 0;
         char **argv = cmd.buildArgv();
-        a = execvp(cmd.currentToken.c_str(), argv);
-        if(a==-1) cerr << "Unknown command: [" << cmd.currentToken << "]." << endl;
+        a = execvp(cmd.currentCommand.c_str(), argv);
+        if(a==-1) cerr << "Unknown command: [" << cmd.currentCommand << "]." << endl;
         exit(0);
     } else { // parent process
         if(pipes.size()!=0) {
-            if(cmd.previosOP == 0 && cmd.nextOP != 0) {
-                /*if(cmd.nextOP != 2){
-                    if(cmd.nextOP == 3 || cmd.nextOP == 4){
-
-                        //close(pipes[pipes.size()-1].fd[1]);
-                        //numberPipes.push_back(pipes[pipes.size()-1]);
-                    } else {
-                        close(pipes[pipes.size()-1].fd[1]);
-                    }
-                }*/
+            if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | cat   (ls |2 or ls > a.html didn't appear)
                 if(cmd.nextOP == 1){
                     close(pipes[pipes.size()-1].fd[1]);
                 }
-            } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
+            } else if(cmd.previosOP != 0 && cmd.nextOP == 0){ // ex. ls | 'cat'
                 close(pipes[pipes.size()-1].fd[0]);
-            } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
-                if(cmd.nextOP != 2){
+            } else if(cmd.previosOP != 0 && cmd.nextOP != 0){ 
+                if(cmd.nextOP != 2){ // ls | 'cat' |2
                     if(cmd.nextOP == 3 || cmd.nextOP == 4){
                         close(pipes[pipes.size()-1].fd[0]);
-                    } else {
+                    } else { // ls | 'cat' | cat
                         close(pipes[pipes.size()-2].fd[0]);
                         close(pipes[pipes.size()-1].fd[1]);
                     }
-                } else {
+                } else { // ex. ls | 'cat' > a.html
                     close(pipes[pipes.size()-1].fd[0]);
                 }
             }
@@ -264,7 +245,7 @@ void forkandexec(command &cmd, int left){
         if(cmd.nextOP == 1 || cmd.nextOP == 3 || cmd.nextOP == 4){ // | |2 !2 don't hang on forever
             waitpid(-1,&status,WNOHANG);
         } else {
-            waitpid(pid,&status, 0); // > hong on if it didn't finish 
+            waitpid(pid,&status, 0); // > hang on if it didn't finish 
         }
     }
 }
@@ -275,60 +256,47 @@ void processToken(command &cmd){
     int i = 0, left = 0;
 
     for(;i<cmd.tokens.size();++i) {
-        if(cmd.currentToken == "") cmd.currentToken = cmd.tokens[i];
-        else if(!cmd.isOPToken(cmd.tokens[i])) cmd.tokenArgument.push_back(cmd.tokens[i]);
+        if(cmd.currentCommand == "") cmd.currentCommand = cmd.tokens[i]; // push cmd
+        else if(!cmd.isOPToken(cmd.tokens[i])) cmd.commandArgument.push_back(cmd.tokens[i]); // cmd argument
         
-        if(cmd.isOPToken(cmd.tokens[i]) || i == cmd.tokens.size()-1){
-            
-            cmd.previosOP = cmd.nextOP;
-            if(i==cmd.tokens.size() - 1 ){
+        if(cmd.isOPToken(cmd.tokens[i]) || i == cmd.tokens.size()-1){ // if is optoken or last index
+            cmd.previosOP = cmd.nextOP; // switch previous op and next op
+            if(i==cmd.tokens.size() - 1 ){ // ls | 'ls' or ls | ls '|2'
                 cmd.nextOP = 0;
                 if(cmd.isNumberPipe(cmd.tokens[i])){
                     cmd.setNextOP(cmd.tokens[i]);
-                    //if(cmd.nextOP == 3 || cmd.nextOP ==4){
                     left = stoi(cmd.tokens[i].substr(1));
                     int inPipeQueue = matchNumberPipeQueue(left);
-                    if(inPipeQueue == -1){
+                    if(inPipeQueue == -1){ // didn't find same left numberpipe
                         numberPipes.push_back(pipestruct{});
                         if(pipe(numberPipes[numberPipes.size()-1].fd)<0){
                             cerr << "pipe error!" << endl;
                         }
-                        numberPipes[numberPipes.size()-1].pipetype = cmd.nextOP == 3 ? 3 : 4;
+                        numberPipes[numberPipes.size()-1].pipetype = cmd.nextOP;
                         numberPipes[numberPipes.size()-1].numberleft = left;
                     }
-                    /*} else {
-                        pipes.push_back(pipestruct{});
-                        if(pipe(pipes[pipes.size()-1].fd) < 0) {
-                            cerr << "create pipe fail" << endl;
-                        }
-                    }*/
-                } /*else {
-                    cmd.nextOP = 0;
-                }*/
+                }
             } 
-            else {
+            else { // ls '|' ls or ls '>' a.html
                 cmd.setNextOP(cmd.tokens[i]);
-                if(cmd.nextOP != 2){
+                if(cmd.nextOP == 1){
                     pipes.push_back(pipestruct{});
                     if(pipe(pipes[pipes.size()-1].fd) < 0) {
                         cerr << "create pipe fail" << endl;
                     }
+                }else{
+                    if(cmd.nextOP == 2 && i+1 < cmd.tokens.size()){
+                        cmd.redirectFileName = cmd.tokens[i+1];
+                        cmd.tokens.pop_back();
+                    }
                 }
-            }
-
-            if(cmd.nextOP == 2){
-                if(i+1 < cmd.tokens.size()){
-                    cmd.redirectFileName = cmd.tokens[i+1];
-                    cmd.tokens.pop_back();
-                } 
             }
             
             forkandexec(cmd, left);
-            cmd.currentToken = "";
-            cmd.tokenArgument.clear();
+            cmd.currentCommand = "";
+            cmd.commandArgument.clear();
         } 
     }
-    //decreaseNumberPipeLeft();
     pipes.clear();
 }
 
@@ -390,7 +358,6 @@ void executable(){
 }
 
 int main(){
-    //void signal_child(int);
     signal(SIGCHLD, signal_child);
     setenv("PATH" , "bin:.", 1);
     executable();
