@@ -154,45 +154,9 @@ void forkandexec(command &cmd, int left){
             }
         }
 
-        if(pipes.size()!=0){
-            if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | ls
-                
-                // not appear previosOP == 0 , nextOP == 3(4) this case, because pipes.size() will == 0  ex. ls |
-                dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
-                close(pipes[pipes.size()-1].fd[1]);
-                close(pipes[pipes.size()-1].fd[0]);
-            } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
-                dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO); // previosOP == 1 , nextOP == 0   ex. ls | 'ls'
-                close(pipes[pipes.size()-1].fd[0]);
-            } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
-                if(cmd.nextOP != 2){
-                    if(cmd.nextOP == 3 || cmd.nextOP == 4){ // ex. ls | 'cat' |2 
-                        int index = matchNumberPipeQueue(left);
-                        if(index != -1){
-                            dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
-                            close(pipes[pipes.size()-1].fd[0]);
-                            dup2(numberPipes[index].fd[1], STDOUT_FILENO);
-                            if(cmd.nextOP == 4) dup2(numberPipes[index].fd[1], STDERR_FILENO);
-                            close(numberPipes[index].fd[1]);
-                            close(numberPipes[index].fd[0]);
-                        }   
-                    }else{ // ex. ls | 'cat' | cat
-                        dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
-                        close(pipes[pipes.size()-2].fd[0]);
-                        dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
-                        close(pipes[pipes.size()-1].fd[1]);
-                        close(pipes[pipes.size()-1].fd[0]);  
-                    }
-                } else { // ex. ls | 'cat' > a.html
-                    dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
-                    close(pipes[pipes.size()-1].fd[0]);
-                    int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
-                    dup2(filefd, STDOUT_FILENO);
-                    close(filefd);
-                }
-            }
-        } else {
-            if(cmd.previosOP == 0 && (cmd.nextOP == 3 || cmd.nextOP == 4) && left != 0){ // 'ls' |2
+        if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | ls
+            
+            if( pipes.size() == 0 && (cmd.nextOP == 3 || cmd.nextOP == 4) && left != 0){ // 'ls' |2
                 int index = matchNumberPipeQueue(left);
                 if(index != -1){
                     dup2(numberPipes[index].fd[1], STDOUT_FILENO);
@@ -200,12 +164,49 @@ void forkandexec(command &cmd, int left){
                     close(numberPipes[index].fd[1]);
                     close(numberPipes[index].fd[0]);
                 }
-            }else if(cmd.nextOP == 2){ // 'ls' > a.html
+            }else if(pipes.size() == 0 && cmd.nextOP == 2){ // 'ls' > a.html
                 int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
                 dup2(filefd, STDOUT_FILENO);
                 close(filefd);
-            } 
-        } 
+            } else { // not appear previosOP == 0 , nextOP == 3(4) this case, because pipes.size() will == 0  ex. ls |
+                // ex. 'ls' | cat
+                dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                close(pipes[pipes.size()-1].fd[1]);
+                close(pipes[pipes.size()-1].fd[0]);
+            }
+
+        } else if(cmd.previosOP != 0 && cmd.nextOP == 0){ // previosOP == 1 , nextOP == 0   ex. ls | 'ls'
+            dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO); 
+            close(pipes[pipes.size()-1].fd[0]);
+        } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
+            if(cmd.nextOP != 2){
+                if(cmd.nextOP == 3 || cmd.nextOP == 4){ // ex. ls | 'cat' |2 
+                    int index = matchNumberPipeQueue(left);
+                    if(index != -1){
+                        dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
+                        close(pipes[pipes.size()-1].fd[0]);
+                        dup2(numberPipes[index].fd[1], STDOUT_FILENO);
+                        if(cmd.nextOP == 4) dup2(numberPipes[index].fd[1], STDERR_FILENO);
+                        close(numberPipes[index].fd[1]);
+                        close(numberPipes[index].fd[0]);
+                    }   
+                }else{ // ex. ls | 'cat' | cat
+                    dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
+                    close(pipes[pipes.size()-2].fd[0]);
+                    dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
+                    close(pipes[pipes.size()-1].fd[1]);
+                    close(pipes[pipes.size()-1].fd[0]);  
+                }
+            } else { // ex. ls | 'cat' > a.html
+                dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
+                close(pipes[pipes.size()-1].fd[0]);
+                // ex. ls | 'cat' > a.html
+                int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+                dup2(filefd, STDOUT_FILENO);
+                close(filefd);
+            }
+        }
+
         int a = 0;
         char **argv = cmd.buildArgv();
         a = execvp(cmd.currentCommand.c_str(), argv);
