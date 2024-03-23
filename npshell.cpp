@@ -165,27 +165,18 @@ void forkandexec(command &cmd, int left){
         }
 
         if(pipes.size()!=0){
-            if(cmd.previosOP == 0 && cmd.nextOP != 0) {
+            if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | ls
                 
-                /*if(cmd.nextOP == 3 || cmd.nextOP == 4){
-                    dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
-                    if(cmd.nextOP == 4){
-                        dup2(pipes[pipes.size()-1].fd[1], STDERR_FILENO);
-                    } 
-                    close(pipes[pipes.size()-1].fd[1]);
-                    close(pipes[pipes.size()-1].fd[0]);
-                }else {*/
+                // not appear previosOP == 0 , nextOP == 3(4) this case, because pipes.size() will == 0  ex. ls |
                 dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
                 close(pipes[pipes.size()-1].fd[1]);
                 close(pipes[pipes.size()-1].fd[0]);
-                //}
             } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
-                dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
+                dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO); // previosOP == 1 , nextOP == 0   ex. ls | 'ls'
                 close(pipes[pipes.size()-1].fd[0]);
-                //close(pipes[pipes.size()-1].fd[1]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
                 if(cmd.nextOP != 2){
-                    if(cmd.nextOP == 3 || cmd.nextOP == 4){
+                    if(cmd.nextOP == 3 || cmd.nextOP == 4){ // ex. ls | 'cat' |2 
                         int index = matchNumberPipeQueue(left);
                         if(index != -1){
                             dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
@@ -195,15 +186,14 @@ void forkandexec(command &cmd, int left){
                             close(numberPipes[index].fd[1]);
                             close(numberPipes[index].fd[0]);
                         }   
-                    }else{
+                    }else{ // ex. ls | 'cat' | cat
                         dup2(pipes[pipes.size()-2].fd[0], STDIN_FILENO);
                         close(pipes[pipes.size()-2].fd[0]);
                         dup2(pipes[pipes.size()-1].fd[1], STDOUT_FILENO);
                         close(pipes[pipes.size()-1].fd[1]);
                         close(pipes[pipes.size()-1].fd[0]);  
                     }
-
-                } else {
+                } else { // ex. ls | 'cat' > a.html
                     dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
                     close(pipes[pipes.size()-1].fd[0]);
                     int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -212,7 +202,7 @@ void forkandexec(command &cmd, int left){
                 }
             }
         } else {
-            if(cmd.previosOP == 0 && (cmd.nextOP == 3 || cmd.nextOP == 4) && left != 0){
+            if(cmd.previosOP == 0 && (cmd.nextOP == 3 || cmd.nextOP == 4) && left != 0){ // 'ls' |2
                 int index = matchNumberPipeQueue(left);
                 if(index != -1){
                     dup2(numberPipes[index].fd[1], STDOUT_FILENO);
@@ -220,7 +210,7 @@ void forkandexec(command &cmd, int left){
                     close(numberPipes[index].fd[1]);
                     close(numberPipes[index].fd[0]);
                 }
-            }else if(cmd.nextOP == 2){
+            }else if(cmd.nextOP == 2){ // 'ls' > a.html
                 int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
                 dup2(filefd, STDOUT_FILENO);
                 close(filefd);
@@ -234,7 +224,7 @@ void forkandexec(command &cmd, int left){
     } else { // parent process
         if(pipes.size()!=0) {
             if(cmd.previosOP == 0 && cmd.nextOP != 0) {
-                if(cmd.nextOP != 2){
+                /*if(cmd.nextOP != 2){
                     if(cmd.nextOP == 3 || cmd.nextOP == 4){
 
                         //close(pipes[pipes.size()-1].fd[1]);
@@ -242,15 +232,16 @@ void forkandexec(command &cmd, int left){
                     } else {
                         close(pipes[pipes.size()-1].fd[1]);
                     }
+                }*/
+                if(cmd.nextOP == 1){
+                    close(pipes[pipes.size()-1].fd[1]);
                 }
             } else if(cmd.previosOP != 0 && cmd.nextOP == 0){
                 close(pipes[pipes.size()-1].fd[0]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){
                 if(cmd.nextOP != 2){
                     if(cmd.nextOP == 3 || cmd.nextOP == 4){
-                        //close(pipes[pipes.size()-2].fd[0]);
                         close(pipes[pipes.size()-1].fd[0]);
-                        //numberPipes.push_back(pipes[pipes.size()-1]);
                     } else {
                         close(pipes[pipes.size()-2].fd[0]);
                         close(pipes[pipes.size()-1].fd[1]);
@@ -261,7 +252,7 @@ void forkandexec(command &cmd, int left){
             }
         }
 
-        for(int i=0;i<numberPipes.size();++i){
+        for(int i=0;i<numberPipes.size();++i){ // close all numberpipe when left = 0
             if(numberPipes[i].numberleft == 0){
                 close(numberPipes[i].fd[1]);
                 close(numberPipes[i].fd[0]); 
@@ -269,17 +260,12 @@ void forkandexec(command &cmd, int left){
         }
 
         int status = 0;
-        usleep(1000*300);
-        if(cmd.nextOP == 1 || cmd.nextOP == 3 || cmd.nextOP == 4){
+        usleep(1000*300); 
+        if(cmd.nextOP == 1 || cmd.nextOP == 3 || cmd.nextOP == 4){ // | |2 !2 don't hang on forever
             waitpid(-1,&status,WNOHANG);
         } else {
-            waitpid(pid,&status, 0);
+            waitpid(pid,&status, 0); // > hong on if it didn't finish 
         }
-        /*if(cmd.nextOP == 0 || cmd.nextOP == 2 || ){
-            waitpid(pid,&status, 0);
-        } else {
-            waitpid(-1,&status,WNOHANG);
-        }*/
     }
 }
 
