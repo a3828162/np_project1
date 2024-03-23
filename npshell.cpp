@@ -200,7 +200,6 @@ void forkandexec(command &cmd, int left){
             } else { // ex. ls | 'cat' > a.html
                 dup2(pipes[pipes.size()-1].fd[0], STDIN_FILENO);
                 close(pipes[pipes.size()-1].fd[0]);
-                // ex. ls | 'cat' > a.html
                 int filefd = open(cmd.redirectFileName.c_str(), O_TRUNC | O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
                 dup2(filefd, STDOUT_FILENO);
                 close(filefd);
@@ -214,21 +213,17 @@ void forkandexec(command &cmd, int left){
         exit(0);
     } else { // parent process
         if(pipes.size()!=0) {
-            if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | cat   (ls |2 or ls > a.html didn't appear)
+            if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | cat   (ls |2 or ls > a.html didn't need to care pipe)
                 if(cmd.nextOP == 1){
                     close(pipes[pipes.size()-1].fd[1]);
                 }
             } else if(cmd.previosOP != 0 && cmd.nextOP == 0){ // ex. ls | 'cat'
                 close(pipes[pipes.size()-1].fd[0]);
             } else if(cmd.previosOP != 0 && cmd.nextOP != 0){ 
-                if(cmd.nextOP != 2){ // ls | 'cat' |2
-                    if(cmd.nextOP == 3 || cmd.nextOP == 4){
-                        close(pipes[pipes.size()-1].fd[0]);
-                    } else { // ls | 'cat' | cat
-                        close(pipes[pipes.size()-2].fd[0]);
-                        close(pipes[pipes.size()-1].fd[1]);
-                    }
-                } else { // ex. ls | 'cat' > a.html
+                if(cmd.nextOP == 1){ // // ls | 'cat' | cat
+                    close(pipes[pipes.size()-2].fd[0]);
+                    close(pipes[pipes.size()-1].fd[1]);
+                } else { // ls | 'cat' |2 or ls | 'cat' > a.html
                     close(pipes[pipes.size()-1].fd[0]);
                 }
             }
