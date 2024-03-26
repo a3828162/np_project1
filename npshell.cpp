@@ -112,7 +112,7 @@ struct pipestruct
 
 vector<pipestruct> pipes;
 vector<pipestruct> numberPipes;
-int maxProcessNum = 300;
+int maxProcessNum = 500;
 int processNum = 0;
 
 void signal_child(int signal){
