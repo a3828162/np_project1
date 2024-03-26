@@ -143,12 +143,14 @@ void decreaseNumberPipeLeft(){
 }
 
 void forkandexec(command &cmd, int left){
-
+    RE:
     while(processNum >= maxProcessNum);
     int pid = fork();
     if(pid < 0) {
+        
         int status = 0;
 		while(waitpid(-1,&status,WNOHANG) > 0){}
+        goto RE;
     }else if(pid == 0) { // chld process
 
         for(int i=0;i<numberPipes.size();++i){
