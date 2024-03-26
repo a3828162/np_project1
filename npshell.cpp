@@ -26,10 +26,6 @@ operationType
 3 : |1
 4 : ?1
 */
-void signal_child(int signal){
-	int status;
-	while(waitpid(-1,&status,WNOHANG) > 0){}
-}
 
 class command
 {
@@ -116,6 +112,14 @@ struct pipestruct
 
 vector<pipestruct> pipes;
 vector<pipestruct> numberPipes;
+int maxProcessNum = 300;
+int processNum = 0;
+
+void signal_child(int signal){
+	int status;
+	//while(waitpid(-1,&status,WNOHANG) > 0){}
+    while(waitpid(-1,&status,WNOHANG) > 0){ --processNum; } // add
+}
 
 bool isBuildinCmd(command currentcmd){
     return currentcmd.tokens[0] == "setenv" || currentcmd.tokens[0] == "printenv" || currentcmd.tokens[0] == "exit";
@@ -140,6 +144,7 @@ void decreaseNumberPipeLeft(){
 
 void forkandexec(command &cmd, int left){
 
+    while(processNum >= maxProcessNum);
     int pid = fork();
     if(pid < 0) {
         int status = 0;
@@ -212,6 +217,7 @@ void forkandexec(command &cmd, int left){
         if(a==-1) cerr << "Unknown command: [" << cmd.currentCommand << "]." << endl;
         exit(0);
     } else { // parent process
+        ++processNum; // add
         if(pipes.size()!=0) {
             if(cmd.previosOP == 0 && cmd.nextOP != 0) { // ex. 'ls' | cat   (ls |2 or ls > a.html didn't need to care pipe)
                 if(cmd.nextOP == 1){
@@ -239,9 +245,13 @@ void forkandexec(command &cmd, int left){
         int status = 0;
         usleep(1000*300); 
         if(cmd.nextOP == 1 || cmd.nextOP == 3 || cmd.nextOP == 4){ // | |2 !2 don't hang on forever
-            waitpid(-1,&status,WNOHANG);
+            //waitpid(-1,&status,WNOHANG);
+            if(waitpid(-1,&status,WNOHANG)>0){ // add
+                --processNum; // add
+            } // add
         } else {
             waitpid(pid,&status, 0); // > hang on if it didn't finish 
+            --processNum; // add
         }
     }
 }
@@ -354,6 +364,7 @@ void executable(){
 }
 
 int main(){
+    processNum = 0;
     signal(SIGCHLD, signal_child);
     setenv("PATH" , "bin:.", 1);
     executable();
