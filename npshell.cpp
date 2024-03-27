@@ -149,7 +149,7 @@ void forkandexec(command &cmd, int left){
     if(pid < 0) {
         
         int status = 0;
-		while(waitpid(-1,&status,WNOHANG) > 0){}
+		while(waitpid(-1,&status,WNOHANG) > 0){ --processNum; }
         goto RE;
     }else if(pid == 0) { // chld process
 
