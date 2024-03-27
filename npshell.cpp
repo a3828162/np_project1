@@ -245,7 +245,7 @@ void forkandexec(command &cmd, int left){
         }
 
         int status = 0;
-        usleep(1000*300); 
+        usleep(20000); 
         if(cmd.nextOP == 1 || cmd.nextOP == 3 || cmd.nextOP == 4){ // | |2 !2 don't hang on forever
             //waitpid(-1,&status,WNOHANG);
             if(waitpid(-1,&status,WNOHANG)>0){ // add
